@@ -1,0 +1,54 @@
+name: MacOS.Sysdiagnose
+author: Eduardo Mattos - @eduardfir
+
+description: |
+  This artifact executes MacOS sysdiagnose tool and uploads the compressed output for further investigation.
+  
+  The sysdiagnose tool gathers system diagnostic information helpful in investigating system performance issues.  A great deal of information is harvested, spanning system state and configuration. The data is stored /var/tmp directory.  sysdiagnose needs to be run as root, therefore your client needs to be running as root.
+
+   What sysdiagnose collects:
+   
+    -   A spindump of the system
+    -   Several seconds of fs_usage ouput
+    -   Several seconds of top output
+    -   Data about kernel zones
+    -   Status of loaded kernel extensions
+    -   Resident memory usage of user processes
+    -   Recent system logs
+    -   A System Profiler report
+    -   Recent crash reports
+    -   Disk usage information
+    -   I/O Kit registry information
+    -   Network status
+    
+   This artifact may take longer than 10 minutes, so adjust the timeout to avoid issues.
+
+reference:
+- https://labs.sentinelone.com/macos-incident-response-part-1-collecting-device-file-system-data/
+
+required_permissions:
+  - EXECVE
+
+type: CLIENT
+
+precondition: SELECT OS From info() where OS = 'darwin'
+  
+sources:
+  - query: |
+      -- build tempfolder for output    
+      LET tempfolder <= tempdir(remove_last=TRUE)
+      
+      -- execute sysdiagnose
+      LET deploy =  SELECT * 
+                    FROM execve(argv=[
+                        'sysdiagnose',
+                        '-u',
+                        '-f', tempfolder])
+            
+      -- output rows
+      SELECT * FROM if(condition= deploy.ReturnCode[0]= 0,
+        then={
+            SELECT Name, upload(file=FullPath,name=Name) as UploadInfo
+            FROM glob(globs=tempfolder + "/*.gz")
+        },
+        else=deploy)      
