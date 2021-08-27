@@ -1,0 +1,98 @@
+name: Custom.Windows.Applications.ProcessHollowingEnriched
+description: |
+    Execute Hasherezade's Hollows Hunter and return output for analysis
+
+    Objective:
+
+    - Scans all running processes. Recognizes and dumps a variety of potentially malicious implants (replaced/implanted PEs, shellcodes, hooks, in-memory patches).
+
+    Use Parameter "IgnoreProcName"  to not scan processes with given name/s (separated by ';'). Example: chrome.exe;mcshield.exe.
+    
+    MITRE ATT&CK ID: T1055 - Process Injection
+
+author: Eduardo Mattos - @eduardfir
+
+reference:
+  - https://github.com/hasherezade/hollows_hunter
+
+type: CLIENT
+
+tools:
+ - name: hollows_hunter
+   url: https://github.com/hasherezade/hollows_hunter/releases/download/v0.2.9.8/hollows_hunter64.exe
+
+precondition: SELECT OS From info() where OS = 'windows'
+
+parameters:
+  - name: UploadOutput
+    description: "Select to Dump and Upload hollows_hunter detected implants."
+    type: bool
+    
+  - name: IgnoreProcName
+    description: "Do not scan processes with given name/s (separated by ';'). Example: chrome.exe;mcshield.exe"
+
+sources:
+  - query: |
+      -- get context on target binary
+      LET payload <= SELECT * FROM Artifact.Generic.Utils.FetchBinary(
+                    ToolName="hollows_hunter", IsExecutable=TRUE)
+
+      -- build tempfolder for output
+      LET tempfolder <= tempdir(remove_last=TRUE)
+
+      -- execute payload
+      LET deploy <= SELECT *
+                    FROM execve(argv=[
+                        payload.FullPath[0],
+                        "/hooks",
+                        "/shellc",
+                        "/json",
+                        "/pignore", if(condition=IgnoreProcName, then=IgnoreProcName, else=""),
+                        "/dir", tempfolder,
+                        "/ofilter", if(condition=UploadOutput, then="0", else="1")
+                        ])
+                        
+      -- upload dumped files and results if selected
+      LET uploadfiles <= SELECT * FROM if(
+            condition=UploadOutput,
+            then={
+             SELECT upload(file=FullPath,
+                                 name=relpath(base=tempfile, path=FullPath)) as FileDetails
+             FROM glob(globs="/**", root=tempfolder)
+            }
+        )
+
+      -- parse json output file
+      LET json_results <=  SELECT parse_json(data=read_file(filename=tempfolder + "\\summary.json")) as Detection
+                            FROM deploy
+                            
+      LET Sus <= SELECT * FROM foreach(row=json_results[0].Detection.suspicious)
+      
+      LET process <= SELECT Pid as PsId,
+            Ppid,
+            TokenIsElevated,
+            Name,
+            CommandLine,
+            Exe,
+            Hash,
+            Authenticode,
+            Username
+      FROM Artifact.Windows.System.Pslist()
+      
+      SELECT pid,
+            { SELECT Ppid FROM process WHERE PsId = pid } as Ppid,
+            { SELECT Name FROM process WHERE PsId = pid } as Name,
+            { SELECT Exe FROM process WHERE PsId = pid } as Path,
+            { SELECT CommandLine FROM process WHERE PsId = pid } as CommandLine,
+            { SELECT Hash FROM process WHERE PsId = pid } as Hash,
+            { SELECT Username FROM process WHERE PsId = pid } as Username,
+            { SELECT Authenticode FROM process WHERE PsId = pid } as Authenticode,
+            is_managed as HH_is_managed,
+            replaced as HH_replaced,
+            hdr_modified as HH_hdr_modified,
+            patched as HH_patched,
+            implanted_pe as HH_implanted_pe,
+            implanted_shc as HH_implanted_shc,
+            unreachable_file as HH_unreachable_file,
+            other as HH_other
+       FROM Sus

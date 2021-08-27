@@ -1,0 +1,101 @@
+name: Custom.Windows.Applications.JLECmd
+description: |
+    Execute Eric Zimmerman's JLECmd and return output for analysis
+    
+    # Objective:
+    
+    - The Windows 7 task bar (Jump List) is engineered to allow users to “jump” or access items they have frequently or
+    recently used quickly and easily. This functionality cannot only include recent media files; it must also include recent tasks.
+    
+    - The data stored in the AutomaticDestinations folder will each have a unique file prepended with the AppID of the associated application. 
+
+    # Interpretation:
+    
+    First time of execution of application.
+    
+    - Creation Time = First time item added to the AppID file.
+    
+    Last time of execution of application w/file open.
+    
+    - Modification Time = Last time item added to the AppID file. 
+    
+author: Eduardo Mattos - @eduardfir
+
+reference:
+  - https://github.com/EricZimmerman
+  - https://www.sans.org/security-resources/posters/windows-forensic-analysis
+  
+required_permissions:
+  - EXECVE
+
+type: CLIENT
+
+tools:
+  - name: JLECmd
+
+precondition: SELECT OS From info() where OS = 'windows'
+
+parameters:
+
+  - name: userRegex
+    default: .
+
+  - name: UploadFiles
+    description: "Select to Upload JLECmd Output files."
+    type: bool
+    
+  - name: RemovePayload
+    description: "Select to Remove Payload after execution."
+    type: bool
+
+
+sources:
+  - query: |
+      -- get context on target binary
+      LET payload <= SELECT * FROM Artifact.Generic.Utils.FetchBinary(
+                    ToolName="JLECmd", IsExecutable=TRUE)
+
+      -- build tempfolder for output    
+      LET tempfolder <= tempdir(remove_last=TRUE)
+
+      -- get users with profiles 
+      LET UserProfiles = SELECT Uid, Name, Directory, UUID, Mtime
+                        FROM Artifact.Windows.Sys.Users()
+                        WHERE Name =~ userRegex and Directory =~ "Users"
+
+      -- execute payload
+      LET deploy <= SELECT * FROM foreach(row=UserProfiles,
+                    query={
+                        SELECT *, Name
+                        FROM execve(argv=[
+                            payload.FullPath[0],
+                            "-d", Directory + "\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations",
+                            "--csv", tempfolder,
+                            "--csvf", Name + ".csv",
+                            "-q"])
+                    })
+
+      -- parse AutomaticDestinations csvs
+      SELECT * FROM foreach(row=deploy,
+      query={
+        SELECT *, Name as UserName
+        FROM parse_csv(filename=tempfolder + "\\" + Name + "_AutomaticDestinations.csv")
+      })
+
+  - name: Uploads
+    queries:
+          - |
+              SELECT * FROM chain(
+                a={
+                    SELECT * FROM if(condition=UploadFiles,
+                        then={
+                            SELECT Name, upload(file=FullPath, name=relpath(base=tempfile, path=FullPath)) as FileDetails
+                            FROM glob(globs="/**", root=tempfolder)})
+                },
+                b={ 
+                    SELECT * FROM if(condition=RemovePayload,
+                        then={
+                            SELECT * FROM execve(argv=['powershell','Remove-Item',
+                                                    payload.FullPath[0],'-Force' ])})
+                })
+              WHERE Stdout =~ "JLECmd"

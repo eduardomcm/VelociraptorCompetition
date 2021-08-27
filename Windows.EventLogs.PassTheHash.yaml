@@ -1,0 +1,151 @@
+name: Custom.Windows.EventLogs.PassTheHash
+author: "Eduardo Mattos - @eduardfir"
+description: |
+    Pass-The- Hash attacks are usually performed by dumping the connected user password’s hash (AKA NTLM hash) from memory and instead of using a clear text password to authenticate a user,
+    the hash is passed straight to a remote host as an NTLM authentication instead of requesting service ticket from the domain controller using Kerberos, therefore the actual authentication occurs on the target endpoint.
+
+    The detection of Pass-The-Hash attack can be done with any “Negotiation” logon sessions that contains the Logon Type ‘9’. 
+    There’s a high probability that Pass-The-Hash attack will be executed via this method, and the only time that you’ll see Logon Type ‘9’ in “Negotiation” session will be if someone is using RUNAS command with the /NETONLY flag, which is not something you see every day in normal environments, so the false positive rate in this method is very low.
+
+    Even though there can be false positives, encountering “Negotiation” logon session with Logon Type 9 usually means someone tried to pass-the-hash instead of entering the username’s password.
+     
+reference:
+  - https://jblog.javelin-networks.com/blog/detecting-pass-ticket-pass-hash-attack-using-simple-wmi-commands
+  - https://stealthbits.com/blog/how-to-detect-pass-the-hash-attacks
+  - https://www.elastic.co/blog/how-attackers-abuse-access-token-manipulation
+
+precondition: SELECT OS From info() where OS = 'windows'
+ 
+parameters:
+  - name: Security
+    description: path to Security event log.
+    default: '%SystemRoot%\System32\Winevt\Logs\Security.evtx'
+  - name: DateAfter
+    description: "search for events after this date. YYYY-MM-DDTmm:hh:ss Z"
+    type: timestamp
+  - name: DateBefore
+    description: "search for events before this date. YYYY-MM-DDTmm:hh:ss Z"
+    type: timestamp
+  - name: SourceIPRegex
+    default: .
+  - name: UserNameRegex
+    default: .
+  - name: UserNameWhitelist
+    default: '\$$'
+  - name: SearchVSS
+    description: "add VSS into query."
+    type: bool
+    
+sources:
+  - query: |
+      -- firstly set timebounds for performance
+      LET DateAfterTime <= if(condition=DateAfter,
+        then=DateAfter, else=timestamp(epoch="1600-01-01"))
+      LET DateBeforeTime <= if(condition=DateBefore,
+        then=DateBefore, else=timestamp(epoch="2200-01-01"))
+
+      -- expand provided glob into a list of paths on the file system (fs)
+      LET fspaths <= SELECT FullPath
+        FROM glob(globs=[
+        	expand(path=Security)])
+
+      -- function returning list of VSS paths corresponding to path
+      LET vsspaths(path) = SELECT FullPath
+        FROM Artifact.Windows.Search.VSS(SearchFilesGlob=path)
+                                    
+      -- function returning query hits
+      LET evtxsearch(PathList) = SELECT * FROM foreach(
+            row=PathList,
+            query={
+                SELECT 
+                    timestamp(epoch=int(int=System.TimeCreated.SystemTime)) AS EventTime,
+                    System.Computer as Computer,
+                    System.Channel as Channel,
+                    System.EventID.Value as EventID,
+                    if(condition= System.Channel='Security',
+                        then= EventData.TargetDomainName,
+                        else= if(condition= UserData.EventXML.User,
+                            then= split(string=UserData.EventXML.User,sep='\\\\')[0],
+                            else= if(condition= UserData.EventXML.Param2,
+                                then= UserData.EventXML.Param2,
+                                else= 'null' ))) as DomainName,
+                    if(condition= System.Channel='Security',
+                        then= EventData.TargetUserName,
+                        else= if(condition= UserData.EventXML.User,
+                            then= split(string=UserData.EventXML.User,sep='\\\\')[1],
+                            else= if(condition= UserData.EventXML.Param1,
+                                then= UserData.EventXML.Param1,
+                                else= 'null' ))) as UserName,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.LogonType,
+                            then= EventData.LogonType,
+                            else= 'null' ),
+                        else= 'null' ) as LogonType,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.LogonProcessName AND EventData.LogonProcessName = 'seclogo',
+                            then= EventData.LogonProcessName,
+                            else= 'null' ),
+                        else= 'null' ) as LogonProcessName,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.ProcessName,
+                            then= EventData.ProcessName,
+                            else= 'null' ),
+                        else= 'null' ) as ProcessName,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.IpAddress,
+                            then= EventData.IpAddress,
+                            else= 'null' ),
+                        else= 'null' ) as SourceIP,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.TargetOutboundUserName,
+                            then= EventData.TargetOutboundUserName,
+                            else= 'null' ),
+                        else= 'null' ) as TargetOutboundUserName,
+                    if(condition= System.Channel='Security',
+                        then= if(condition= EventData.TargetOutboundDomainName,
+                            then= EventData.TargetOutboundDomainName,
+                            else= 'null' ),
+                        else= 'null' ) as TargetOutboundDomainName,
+                    if(condition= System.EventID.Value = 4624 AND EventData.LogonType = 9, 
+                    	    then='LOGON_SUCCESSFUL',
+                    	else=
+                    	    get(item=dict(
+                    			`4634`='LOGOFF_DISCONNECT'),
+                    		    	member=str(str=System.EventID.Value)
+                    	)) as Description,
+                    get(field="Message") as Message,
+                    System.EventRecordID as EventRecordID,
+                    FullPath
+                FROM parse_evtx(filename=FullPath)
+                WHERE 
+                    ( Channel = 'Security' 
+                        AND ( (EventID in (4624,4634) AND LogonType = 9)))
+                    AND EventTime < DateBeforeTime 
+                    AND EventTime > DateAfterTime
+                    AND if(condition= UserNameWhitelist,
+                        then= NOT UserName =~ UserNameWhitelist,
+                        else= True)
+                    AND UserName =~ UserNameRegex
+                    AND SourceIP =~ SourceIPRegex
+            }
+          )
+
+      -- include VSS in calculation and deduplicate with GROUP BY by file
+      LET include_vss = SELECT * FROM foreach(row=fspaths,
+            query={
+                SELECT *
+                FROM evtxsearch(PathList={
+                        SELECT FullPath FROM vsspaths(path=FullPath)
+                    })
+                GROUP BY EventRecordID,Channel
+              })
+
+      -- exclude VSS in EvtxHunt
+      LET exclude_vss = SELECT *
+        FROM evtxsearch(PathList={SELECT FullPath FROM fspaths})
+
+      -- return rows
+      SELECT *
+      FROM if(condition=SearchVSS,
+        then=include_vss,
+        else=exclude_vss)

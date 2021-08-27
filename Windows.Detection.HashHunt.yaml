@@ -1,0 +1,38 @@
+name: Custom.Windows.Detection.HashHunt
+author: "Eduardo Mattos- @eduardfir"
+description: |
+    Hunt for File Hashes. 
+    
+    Default TargetGlob searches for files ending in User profile folders only. Change as needed.
+
+type: CLIENT
+
+parameters:
+  - name: TargetGlob
+    default: "C:/Users/**"
+  - name: IOCHashTable
+    type: csv
+    default: |
+        IOCName,MD5,SHA1,SHA256
+        netscan.exe,d6a246a98a0387e2a5f9d95ddd8ae164,9d39c0d21b96ebb210fe467ad50604f05543db8e,459d655c416cc429a7661c0dddc3826a6b34cce0c662ccd8db735934858aa010
+
+sources:
+  - query: |
+      LET bins <= SELECT
+            lowcase(string=IOCName) AS Filename,
+            lowcase(string=MD5) AS MD5,
+            lowcase(string=SHA1) AS SHA1,
+            lowcase(string=SHA256) AS SHA256
+        FROM IOCHashTable
+        
+      SELECT
+        FullPath,Name,Size,
+        hash(path=FullPath) as Hash,
+        Mtime,Atime,Ctime,Btime
+      FROM glob(globs=TargetGlob)
+      WHERE NOT IsDir AND NOT IsLink
+        AND (
+                (lowcase(string=Hash.MD5) in bins.MD5) OR
+                (lowcase(string=Hash.SHA1) in bins.SHA1) OR        
+                (lowcase(string=Hash.SHA256) in bins.SHA256)
+        )

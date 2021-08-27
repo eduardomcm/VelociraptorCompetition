@@ -1,0 +1,31 @@
+name: Custom.Windows.Registry.AteraNetworks
+description: |
+    Find AteraNetworks Registration Email in the Registry to track threat actors.
+
+type: CLIENT
+
+author: Eduardo Mattos - @eduardfir
+
+reference:
+  - https://www.advanced-intel.com/post/secret-backdoor-behind-conti-ransomware-operation-introducing-atera-agent
+  
+precondition:
+  SELECT * FROM info() where OS = 'windows'
+
+parameters:
+  - name: SearchRegistryGlob
+    default: \HKEY_LOCAL_MACHINE\SOFTWARE\ATERA Networks\AlphaAgent\**
+    description: Use a glob to define the registry hives that will be searched.
+
+sources:
+  - query: |
+        SELECT  Name,
+                FullPath,
+                Data,
+                Sys,
+                ModTime as Modified
+        FROM glob(globs=SearchRegistryGlob, accessor='registry')
+
+column_types:
+  - name: Modified
+    type: timestamp

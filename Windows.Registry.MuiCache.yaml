@@ -1,0 +1,27 @@
+name: Custom.Windows.Registry.MuiCache
+description: |
+
+    Each time that you start using a new application, Windows operating system automatically extract the application name from the version resource of the exe file, and stores it for using it later, in Registry key known as the 'MuiCache'. Even if your delete MUICache items, they'll reappear in the next time that you run the application.
+
+    The Location Of The MUICache Data in the Registry
+    
+    - In Windows 2000, Windows XP, Windows Server 2003, the MUICache data is stored under HKEY_CURRENT_USER\Software\Microsoft\Windows\ShellNoRoam\MUICache.
+    - Starting from Windows Vista, the MUICache data is stored under HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache
+
+type: CLIENT
+
+author: Eduardo Mattos - @eduardfir
+
+precondition:
+  SELECT * FROM info() where OS = 'windows'
+
+parameters:
+  - name: SearchRegistryGlob
+    default: Local Settings\Software\Microsoft\Windows\Shell\MuiCache\**
+
+sources:
+  - query: |
+  
+        SELECT basename(path=url(parse=FullPath).Fragment) as Application, Data.value, Username
+        FROM Artifact.Custom.Windows.Registry.UsrClass(KeyGlob=SearchRegistryGlob) 
+        WHERE FullPath=~"%5CMuiCache%5C" AND NOT Data.type="Key" and NOT FullPath =~ "LangID"
