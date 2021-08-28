@@ -1,0 +1,41 @@
+name: Custom.MacOS.Sys.BashHistory
+
+author: "Eduardo Mattos - @eduardfir"
+description: |
+  This artifact enables grep of Bash and alternate shell history files.  
+  
+  It can also be used to target other files located in the user profile such as 
+  *_profile.
+    
+  tags: .bash_history .bash_profile
+  
+parameters:
+  - name: SearchFilesGlobTable
+    type: csv
+    default: |
+      Glob
+      /Volumes/*/private/var/root/.*_history
+      /Volumes/*/Users/*/.*_history
+  - name: SearchRegex
+    description: "Regex of strings to search in line."
+    default: '.'
+  - name: WhitelistRegex
+    description: "Regex of strings to leave out of output."
+    default:
+
+sources:
+  - precondition:
+      SELECT OS From info() where OS = 'darwin'
+      
+    query: |
+      LET files = SELECT FullPath FROM glob(globs=SearchFilesGlobTable)
+
+      SELECT * FROM foreach(row=files,
+          query={
+              SELECT Line, FullPath FROM parse_lines(filename=FullPath)
+              WHERE 
+                Line =~ SearchRegex
+                AND NOT if(condition= WhitelistRegex,
+                    then= Line =~ WhitelistRegex,
+                    else= FALSE)
+          })
