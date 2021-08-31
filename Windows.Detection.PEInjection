@@ -1,0 +1,100 @@
+name: Custom.Windows.Detection.PEInjection
+description: |
+  Enumerate the memory regions of each running process and return VAD regions marked as PAGE_EXECUTE_READWRITE to find possibly injected processes.
+  
+  Once the regions are mapped the regions containing PEs are parsed with the parse_pe() plugin.
+
+  MITRE ATT&CK ID: T1055 - Process Injection
+    
+author: Eduardo Mattos - @eduardfir
+
+parameters:
+  - name: processRegex
+    description: A regex applied to process names.
+    default: .
+  - name: YaraRule
+    description: Yara option and the default if no other options provided.
+    default: |
+        rule IsPE {
+           meta:
+              author = "the internet"
+              date = "2021-03-04"
+              description = "A simple rule to find PE headers"
+          strings: 
+              $MZ1 = "MZ"
+          condition:
+             ($MZ1) and
+             uint16(0) == 0x5A4D and
+             uint32(uint32(0x3C)) == 0x00004550
+        }
+      
+sources:
+  - name: PEInjections
+    query: |
+      -- store info from running processes
+      LET processes = SELECT Pid, Ppid, TokenIsElevated, Name, CommandLine, Exe,
+               hash(path=Exe) as Hash,
+               authenticode(filename=Exe) AS Authenticode,
+               Username, Memory.WorkingSetSize AS WorkingSetSize
+        FROM pslist()
+        WHERE Name =~ processRegex
+      
+      -- merge info from running processes with VAD regions info  
+      LET sus <= SELECT * FROM foreach(
+          row=processes,
+          query={
+            SELECT Pid, Name, Address as AddressStart, (Address + Size) as AddressEnd,
+                format(format='%x-%x', args=[Address, Address+Size]) AS Range, Size,
+                Protection, Ppid, CommandLine, Hash, Username, Authenticode
+            FROM vad(pid=Pid)
+            WHERE Protection = "xrw"
+          })
+          
+      -- use yara to find PE's loaded inside the selected vad regions     
+      LET peinjected <= SELECT * FROM foreach(
+        row=sus,
+        query={
+            SELECT
+                Name,
+                CommandLine,
+                Pid,
+                Hash,
+                Authenticode,
+                Username,
+                Rule,
+                str(str=String.Data) AS HitContext,
+                String.Offset as HitOffset,
+                String.Name as HitName,
+                String.HexData as HitHexData,
+                parse_pe(accessor='data', file=read_file(filename=str(str=Pid), accessor='process', offset=String.Offset, length=Size)) as InjectedPE
+             FROM yara(files=Pid,accessor='process',rules=YaraRule, start=AddressStart, end=AddressEnd, key=TRUE)
+          })
+       
+       -- return results
+       SELECT   
+            Name,
+            CommandLine,
+            Pid,
+            Hash,
+            Authenticode,
+            Username,
+            Rule,
+            HitContext,
+            HitOffset,
+            HitName,
+            HitHexData
+       FROM peinjected
+       
+  - name: ParsedInjectedPE
+    query: |
+      -- return parse_pe rows containing the parsed data from injected PEs, in multiple columns
+      SELECT 
+        Name,
+        Pid,
+        InjectedPE.FileHeader,
+        InjectedPE.PDB,
+        InjectedPE.Sections,
+        InjectedPE.VersionInformation,
+        InjectedPE.Exports,
+        InjectedPE.Authenticode
+      FROM peinjected

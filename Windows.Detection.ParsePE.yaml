@@ -1,0 +1,42 @@
+name: Custom.Windows.Detection.ParsePE
+author: "Eduardo Mattos- @eduardfir"
+description: |
+    Parse PE information and filter results based on VersionInformation table or ImpHash
+
+type: CLIENT
+
+parameters:
+  - name: TargetGlob
+    default: C:\**\*.{exe,dll}
+  - name: CompanyNameRegex
+    default: "."
+  - name: FileDescriptionRegex
+    default: "."
+  - name: ProductVersionRegex
+    default: "."
+  - name: OriginalFilenameRegex
+    default: "."
+  - name: InternalNameRegex
+    default: "."   
+  - name: ImpHashFilter
+    description: Enter ImpHash value to filter PEs by.
+    default: "" 
+    
+sources:
+  - query: |
+      SELECT
+        FullPath,Name,Size,
+        parse_pe(file=FullPath) as ParsePE,
+        hash(path=FullPath) as Hash,
+        Mtime,Atime,Ctime,Btime
+      FROM glob(globs=TargetGlob, accessor="file")
+      WHERE 
+        NOT IsDir AND NOT IsLink
+        AND (
+                (lowcase(string=VersionInformation.CompanyName) =~ CompanyNameRegex) AND
+                (lowcase(string=VersionInformation.FileDescription) =~ FileDescriptionRegex) AND  
+                (lowcase(string=VersionInformation.ProductVersion) =~ ProductVersionRegex) AND   
+                (lowcase(string=VersionInformation.OriginalFilename) =~ OriginalFilenameRegex) AND
+                (lowcase(string=VersionInformation.InternalName) =~ InternalNameRegex) AND
+                if(condition=ImpHashFilter, then=ParsePE.ImpHash = ImpHashFilter, else=TRUE)
+            )
