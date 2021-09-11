@@ -1,0 +1,50 @@
+name: Server.Enrichment.IPList
+author: "Eduardo Mattos- @eduardfir"
+
+description: |
+  Enrich IP addresses supplied. 
+  
+  This artifact requires both Geo ISP and Geo IP MaxMind databases to be configured under Server.Enrichment.GeoIPISP and Server.Enrichment.GeoIP respectively
+  
+  You may supply the IPs in 3 different ways, and the priority order of arguments is the following
+  
+  - (1) If a single IP is supplied, only it will be resolved;
+  - (2) If the CSV table has values manually inputted, only the table will be resolved;
+  - (3) If a CSV list is uploaded under tool 'CSV_IP_LIST', only the CSV list will be resolved (The fist column name must be "IP")
+
+type: Server
+
+tools:
+  - name: CSV_IP_LIST
+
+parameters:
+  - name: SingleIP
+    default: 
+  - name: IPCSVTable
+    type: csv
+    default: |
+        IP
+        
+sources:
+  - query: |
+        LET CSVList <= SELECT FullPath FROM Artifact.Generic.Utils.FetchBinary(ToolName="CSV_IP_LIST", IsExecutable=FALSE)
+        
+        LET IPLIST = SELECT * FROM if(condition=SingleIP,
+            then= { SELECT SingleIP as IPAddress FROM scope()},
+            else= if(condition=IPCSVTable,
+                then= { SELECT IP as IPAddress FROM IPCSVTable },
+                else= { SELECT IP as IPAddress FROM parse_csv(filename=CSVList.FullPath) }))
+
+        LET GetISP = SELECT * FROM foreach(
+                    row=IPLIST,
+                    query={
+                        SELECT IPAddress, ISP, Organization, ASN, ASO
+                        FROM Artifact.Server.Enrichment.GeoIPISP(IP=IPAddress) 
+                    })
+             
+        SELECT * FROM foreach(
+                    row=GetISP,
+                    query={
+                        SELECT IPAddress, Country, State, City, ISP, Organization as ORG, ASN, ASO
+                        FROM Artifact.Server.Enrichment.GeoIP(IP=IPAddress) 
+                    })
