@@ -4,7 +4,12 @@ author: "Eduardo Mattos- @eduardfir"
 description: |
   Enrich IP addresses supplied. 
   
-  This artifact requires both Geo ISP and Geo IP MaxMind databases to be configured under Server.Enrichment.GeoIPISP and Server.Enrichment.GeoIP respectively
+  This artifact requires both Geo City and Geo ISP MaxMind databases keys to be configured under Server configuration.
+  
+  After storing the database somewhere on your server, you should set the
+  location in the server metadata screen to it under the keys "GeoIPDB" and "GeoIPISPDB"
+  (for example: `/usr/shared/GeoIP2-City_20210910/GeoIP2-City.mmdb` and 
+  `/usr/shared/GeoIP2-City_20210910/GeoIP2-ISP.mmdb` respectively)
   
   You may supply the IPs in 3 different ways, and the priority order of arguments is the following
   
@@ -16,6 +21,18 @@ type: Server
 
 tools:
   - name: CSV_IP_LIST
+
+export: |
+  LET ISPDB = server_metadata().GeoIPISPDB
+  LET ISP(IP) = geoip(db=ISPDB, ip=IP).isp
+  LET ORG(IP) = geoip(db=ISPDB, ip=IP).organization
+  LET ASN(IP) = geoip(db=ISPDB, ip=IP).autonomous_system_number
+  LET ASO(IP) = geoip(db=ISPDB, ip=IP).autonomous_system_organization
+  
+  LET DB = server_metadata().GeoIPDB
+  LET Country(IP) = geoip(db=DB, ip=IP).country.names.en
+  LET State(IP) = geoip(db=DB, ip=IP).subdivisions[0].names.en
+  LET City(IP) = geoip(db=DB, ip=IP).city.names.en
 
 parameters:
   - name: SingleIP
@@ -30,21 +47,34 @@ sources:
         LET CSVList <= SELECT FullPath FROM Artifact.Generic.Utils.FetchBinary(ToolName="CSV_IP_LIST", IsExecutable=FALSE)
         
         LET IPLIST = SELECT * FROM if(condition=SingleIP,
-            then= { SELECT SingleIP as IPAddress FROM scope()},
-            else= if(condition=IPCSVTable,
-                then= { SELECT IP as IPAddress FROM IPCSVTable },
-                else= { SELECT IP as IPAddress FROM parse_csv(filename=CSVList.FullPath) }))
+                    then= { SELECT SingleIP as IPAddress FROM scope()},
+                    else= { SELECT * FROM if(condition=IPCSVTable,
+                        then= { SELECT IP as IPAddress FROM IPCSVTable },
+                        else= { SELECT IP as IPAddress FROM parse_csv(filename=CSVList.FullPath) })}
+                        )
 
         LET GetISP = SELECT * FROM foreach(
                     row=IPLIST,
                     query={
-                        SELECT IPAddress, ISP, Organization, ASN, ASO
-                        FROM Artifact.Server.Enrichment.GeoIPISP(IP=IPAddress) 
+                        SELECT
+                            IPAddress,
+                            Country(IP=_value) AS Country,
+                            State(IP=_value) AS State,
+                            City(IP=_value) AS City
+                        FROM foreach(row=IPAddress)
                     })
              
         SELECT * FROM foreach(
                     row=GetISP,
                     query={
-                        SELECT IPAddress, Country, State, City, ISP, Organization as ORG, ASN, ASO
-                        FROM Artifact.Server.Enrichment.GeoIP(IP=IPAddress) 
+                        SELECT 
+                            IPAddress,
+                            Country,
+                            State,
+                            City,
+                            ISP(IP=_value) AS ISP,
+                            ORG(IP=_value) AS ORG,
+                            ASN(IP=_value) AS ASN,
+                            ASO(IP=_value) AS ASO
+                        FROM foreach(row=IPAddress)
                     })
