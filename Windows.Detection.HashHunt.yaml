@@ -3,10 +3,25 @@ author: "Eduardo Mattos- @eduardfir"
 description: |
     Hunt for File Hashes. 
     
+    The analyst can choose to:
+    <ol>
+    <li> manually enter hashes in a csv table, OR
+    <li> upload a CSV list as the "CSV_HASH_LIST" tool in this artifact
+    </ol>
+    
     Default TargetGlob searches for files ending in User profile folders only. Change as needed.
+    
+    **Example of the required CSV columns:**
+    
+    |IOCName|MD5|SHA1|SHA256|
+    |-------|---|----|------|
+    |netscan.exe|d6a246a98a0387e2a5f9d95ddd8ae164|9d39c0d21b96ebb210fe467ad50604f05543db8e|459d655c416cc429a7661c0dddc3826a6b34cce0c662ccd8db735934858aa010|
 
 type: CLIENT
 
+tools:
+  - name: CSV_HASH_LIST
+  
 parameters:
   - name: TargetGlob
     default: "C:/Users/**"
@@ -14,25 +29,43 @@ parameters:
     type: csv
     default: |
         IOCName,MD5,SHA1,SHA256
-        netscan.exe,d6a246a98a0387e2a5f9d95ddd8ae164,9d39c0d21b96ebb210fe467ad50604f05543db8e,459d655c416cc429a7661c0dddc3826a6b34cce0c662ccd8db735934858aa010
 
 sources:
   - query: |
-      LET bins <= SELECT
-            lowcase(string=IOCName) AS Filename,
-            lowcase(string=MD5) AS MD5,
-            lowcase(string=SHA1) AS SHA1,
-            lowcase(string=SHA256) AS SHA256
-        FROM IOCHashTable
-        
+      -- store the HashList tool if evaluated later
+      LET HashList <= SELECT FullPath FROM Artifact.Generic.Utils.FetchBinary(ToolName="CSV_HASH_LIST", IsExecutable=FALSE)  
+      
+      -- select the hashes from the available list
+      LET bins <= SELECT * FROM if(condition=IOCHashTable,
+                    then= { 
+                        SELECT
+                            lowcase(string=IOCName) AS Filename,
+                            lowcase(string=MD5) AS MD5,
+                            lowcase(string=SHA1) AS SHA1,
+                            lowcase(string=SHA256) AS SHA256
+                        FROM IOCHashTable
+                    },
+                    else= { 
+                        SELECT
+                            lowcase(string=IOCName) AS Filename,
+                            lowcase(string=MD5) AS MD5,
+                            lowcase(string=SHA1) AS SHA1,
+                            lowcase(string=SHA256) AS SHA256
+                        FROM parse_csv(filename=HashList.FullPath) 
+                    })
+                    
+      -- return rows
       SELECT
-        FullPath,Name,Size,
+        FullPath,
+        Name as FileName,
+        Size,
         hash(path=FullPath) as Hash,
         Mtime,Atime,Ctime,Btime
       FROM glob(globs=TargetGlob)
       WHERE NOT IsDir AND NOT IsLink
         AND (
-                (lowcase(string=Hash.MD5) in bins.MD5) OR
-                (lowcase(string=Hash.SHA1) in bins.SHA1) OR        
-                (lowcase(string=Hash.SHA256) in bins.SHA256)
+            (lowcase(string=Hash.MD5) in bins.MD5) OR
+            (lowcase(string=Hash.SHA1) in bins.SHA1) OR        
+            (lowcase(string=Hash.SHA256) in bins.SHA256)
         )
+        AND NOT Hash = null
