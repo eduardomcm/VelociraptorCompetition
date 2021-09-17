@@ -1,0 +1,66 @@
+name: Custom.Windows.Scanner.Loki
+
+description: |
+    
+    This artifact leverages Loki open-source scanner to scan for IOCs.
+    
+    **If the clients being scanned do not have internet access, 
+    this artifact needs some preparation prior to launch. If that is the case, 
+    follow the steps below:**
+    
+    <ol>
+    <li> Download the latest Loki release from https://github.com/Neo23x0/Loki/releases 
+    and unzip it locally. </li>
+    <li> Download the signature base from https://github.com/Neo23x0/signature-base/archive/master.zip
+    and unzip the folder inside the Loki folder, but renaming it to /signature-base </li>
+    <li> Rezip the Loki folder, now with the signature-base inside, 
+    and upload as the Loki tool in this artifact. </li>
+    </ol>
+    
+author: Eduardo Mattos - @eduardfir
+
+tools:
+  - name: Loki
+    url: https://github.com/Neo23x0/Loki/releases/download/v0.44.1/loki_0.44.1.zip
+    
+parameters:
+  - name: IntenseScan
+    type: bool
+    
+  - name: UploadCSVLog
+    type: bool
+
+sources:
+  - query: |
+        -- preparation
+        LET Hostname <= SELECT Hostname as Host FROM info()
+        LET Toolzip <= SELECT FullPath FROM Artifact.Generic.Utils.FetchBinary(ToolName="Loki", IsExecutable=FALSE)
+        LET TmpDir <= tempdir(remove_last=TRUE)
+        LET UnzipIt <= SELECT * FROM unzip(filename=Toolzip.FullPath, output_directory=TmpDir)
+        
+        -- execute Loki
+        LET ExecLoki <= SELECT * FROM execve(argv=filter(list=[
+                        TmpDir + "/loki/loki.exe", 
+                        "-l", TmpDir + "\\loki\\" + Hostname.Host[0]  + "-loki-log-file.csv", 
+                        "--csv", 
+                        "--onlyrelevant",
+                        "--dontwait",
+                        if(condition=IntenseScan, then="--intense", else="")], regex="."))
+        -- parse csvs
+        SELECT * FROM foreach(row=ExecLoki,
+            query={
+                SELECT *, Hostname
+                FROM split_records(filenames=TmpDir + "\\loki\\" + Hostname.Host[0]  + "-loki-log-file.csv", accessor="auto", regex="," , columns=['Time', 'Hostname', 'DetectionType', 'ScanType', 'Detection'], count=5)
+        })
+        
+  - name: Uploads
+    query: |
+        -- upload CSV logs if requested
+        SELECT * FROM if(
+           condition=UploadCSVLog,
+           then={
+             SELECT Name, upload(file=FullPath,
+                                 name=relpath(base=TmpDir + Hostname.Host[0] + "-loki-log-file.csv", path=FullPath)) as FileDetails
+             FROM glob(globs="/**", root=TmpDir)
+             WHERE Name =~ "(csv)$"
+        })
