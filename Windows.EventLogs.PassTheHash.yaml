@@ -1,4 +1,4 @@
-name: Custom.Windows.EventLogs.PassTheHash
+name: Windows.EventLogs.PassTheHash
 author: "Eduardo Mattos - @eduardfir"
 description: |
     Pass-The- Hash attacks are usually performed by dumping the connected user password’s hash (AKA NTLM hash) from memory and instead of using a clear text password to authenticate a user,
@@ -82,7 +82,7 @@ sources:
                             else= 'null' ),
                         else= 'null' ) as LogonType,
                     if(condition= System.Channel='Security',
-                        then= if(condition= EventData.LogonProcessName AND EventData.LogonProcessName = 'seclogo',
+                        then= if(condition= EventData.LogonProcessName,
                             then= EventData.LogonProcessName,
                             else= 'null' ),
                         else= 'null' ) as LogonProcessName,
@@ -119,7 +119,7 @@ sources:
                 FROM parse_evtx(filename=FullPath)
                 WHERE 
                     ( Channel = 'Security' 
-                        AND ( (EventID in (4624,4634) AND LogonType = 9)))
+                        AND (EventID in (4624,4634) AND LogonType = 9 AND LogonProcessName = 'seclogo'))
                     AND EventTime < DateBeforeTime 
                     AND EventTime > DateAfterTime
                     AND if(condition= UserNameWhitelist,
