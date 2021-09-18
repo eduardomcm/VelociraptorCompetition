@@ -1,0 +1,92 @@
+name: MacOS.Triage.AutoMacTC
+
+description: |
+    
+    This artifact leverages CrowdStrike's AutoMacTC open-source collector to collect triage data.
+    
+    You may select the included modules by modifying the parameter **Module** 
+    according to the available module names below, or you may include all and exclude specific modules 
+    by specifying modules in the **ExcludeModules** parameter
+    
+    ## Current Modules:
+    	- pslist (current process list at time of automactc run)
+    	- lsof (current file handles open at time of automactc run)
+    	- netstat (current network connections at time of automactc run)
+    	- unifiedlogs (collect Unified Logging events from a live system based on specified predicates)
+    	- asl (parsed Apple System Log (.asl) files)
+    	- auditlog (parsing audit log files from private/var/audit/)
+    	- autoruns (parsing of various persistence locations and plists)
+    	- bash (parsing bash/.*_history files for all users)
+    	- chrome (parsing chrome visit history and download history)
+    	- cookies (parsing the cookies database for each user for chrome and firefox)
+    	- coreanalytics (parsing program execution evidence produced by Apple diagnostics)
+    	- dirlist (list hof files and directories across the disk)
+    	- eventtaps (parsing event tap items)
+    	- firefox (parsing firefox visit history and download history)
+    	- installhistory (parsing program installation history)
+    	- mru (parsing SFL and MRU plist files)
+    	- netconfig (parsing airport and network interface settings)
+    	- quarantines (parsing QuarantineEventsV2 database)
+    	- quicklook (parsing Quicklooks database)
+    	- safari (parsing safari visit history and download history)
+    	- spotlight (parsing user spotlight top searches)
+    	- ssh (parsing known_hosts and authorized_keys files for each user)
+    	- syslog (parsing system.log files)
+    	- systeminfo (basic system identification, such as current IP address, serial no, hostname)
+    	- terminalstate (decode and parse savedState files for the Terminal application for each user)
+    	- users (listing present and deleted users on the system)
+    	- utmpx (listing user sessions on terminals)
+    
+author: Eduardo Mattos - @eduardfir
+
+reference:
+  - https://www.crowdstrike.com/blog/automating-mac-forensic-triage/
+  - https://github.com/CrowdStrike/automactc
+
+tools:
+  - name: AutoMacTC
+    url: https://github.com/CrowdStrike/automactc/archive/refs/heads/master.zip
+    
+parameters:
+  - name: Modules
+    default: "all"
+    description: use "all" to run all modules, space separated list only.
+  - name: ExcludeModules
+    description: assumes you want to run **all** modules **EXCEPT** those specified here, space separated list only
+
+sources:
+  - query: |
+        -- preparation
+        LET Hostname <= SELECT Hostname as Host FROM info()
+        LET Toolzip <= SELECT FullPath FROM Artifact.Generic.Utils.FetchBinary(ToolName="AutoMacTC", IsExecutable=FALSE)
+        LET TmpDir <= tempdir(remove_last=TRUE)
+        LET UnzipIt <= SELECT * FROM unzip(filename=Toolzip.FullPath, output_directory=TmpDir)
+
+        -- execute AutoMacTC
+        LET deploy <= SELECT * FROM if(condition=ExcludeModules,
+                        then= {
+                            SELECT * FROM execve(argv=[
+                                "/usr/bin/python",
+                                TmpDir + "/automactc-master/automactc.py", 
+                                "-o",  TmpDir + "/automactc-master/",
+                                "-x", ExcludeModules,
+                                "--rtr"])
+                            WHERE log(message=Stdout) AND log(message=Stderr)
+                        },
+                        else= {
+                            SELECT * FROM execve(argv=[
+                                "/usr/bin/python",
+                                TmpDir + "/automactc-master/automactc.py", 
+                                "-o",  TmpDir + "/automactc-master/",
+                                "-m", Modules,
+                                "--rtr"])
+                            WHERE log(message=Stdout) AND log(message=Stderr)
+                        })
+
+        -- upload results archive
+        SELECT * FROM if(condition= deploy.ReturnCode[0]= 0,
+            then={
+                SELECT Name, upload(file=FullPath,name=Name) as UploadInfo
+                FROM glob(globs=TmpDir + "/automactc-master/*.tar.gz")
+            },
+            else=deploy)

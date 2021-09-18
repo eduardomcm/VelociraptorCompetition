@@ -1,0 +1,49 @@
+name: MacOS.Applications.Safari.History
+description: |
+  Read all User's Safari's history.
+
+author: Eduardo Mattos - @eduardfir
+
+parameters:
+  - name: SafariGlobs
+    default: /Users/*/Library/Safari/
+  - name: userRegex
+    default: .
+  - name: urlSQLQuery
+    default: |
+      SELECT visit_time, title, url 
+      FROM history_visits 
+      INNER JOIN history_items ON history_items.id = history_visits.history_item
+
+precondition: SELECT OS From info() where OS = 'darwin'
+
+sources:
+  - query: |
+        -- preparation
+        LET TmpDir <= tempdir(remove_last=TRUE)
+        LET Paths <= SELECT parse_string_with_regex(regex="/Users/(?P<User>[^/]+)", string=FullPath).User AS User,
+                        FullPath, Mtime
+                     FROM glob(globs=SafariGlobs)
+
+        -- execute History Copy
+        LET Deploy <= SELECT * FROM foreach(row=Paths,
+                        query={
+                                SELECT copy(filename=filter(list=[FullPath + "/History.db"], regex="."), accessor="file", dest=TmpDir + "/History.db") as DBCopyPath, 
+                                (FullPath + "/History.db") as DBFullPath, 
+                                Mtime, 
+                                User
+                                FROM scope()
+                               })
+
+        -- parse from copied file
+        SELECT * FROM foreach(row=Deploy,
+                        query={
+                           SELECT 
+                              timestamp(cocoatime=visit_time) as Visited,
+                              title as Title, 
+                              url as URL,
+                              User, DBFullPath, Mtime
+                          FROM sqlite(
+                             file=DBCopyPath,
+                             query=urlSQLQuery, accessor="auto")
+                          })
