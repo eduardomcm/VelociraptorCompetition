@@ -80,7 +80,7 @@ and practicality.
 
 # Windows.Applications.ProcessHollowingEnriched
 
-  This artifact executes Hasherezade's Hollows Hunter, enriches is with Process List (PsList)
+  This artifact executes Hasherezade's Hollows Hunter, enriches it with Process List (PsList)
   artifact information, and returns the enriched rows for analysis. 
   
   By enriching Hollows Hunter output, the analyst will have better visibility over the results, 
@@ -94,7 +94,7 @@ and practicality.
   
 # Windows.EventLogs.PassTheHash
 
-  Pass-The- Hash attacks are usually performed by dumping the connected user password’s hash (AKA NTLM hash)
+  Pass-The-Hash attacks are usually performed by dumping the connected user password’s hash (AKA NTLM hash)
   from memory and instead of using a clear text password to authenticate a user,
   the hash is passed straight to a remote host as an NTLM authentication 
   instead of requesting service ticket from the domain controller using Kerberos, 
@@ -120,7 +120,7 @@ and practicality.
   
   Even though it has been pacthed by Microsoft long ago, organizations who do not implement patches in all of their
   Domain Controllers might still be exploited by the ZeroLogon vulnerability during an attacker's
-  post-exploitation phase. So much so, that it is part of arsenal in the recently leaked Conti Ransomware group's 
+  post-exploitation phase. So much so, that it is part of the arsenal in the recently leaked Conti Ransomware group's 
   operator's manual.
   
   This artifact will extract Event Logs related to ZeroLogon exploitation and should be executed
@@ -155,7 +155,7 @@ and practicality.
   including the email address utilized to register to the service. This registry key can be used to find
   instalations of this tool, and the email utilized in Threat Intelligence efforts.
 
-  Atera and Splashtop (along with other RMM tools such as AnyDesk and others), have been mentioned in
+  Atera and Splashtop (along with other RMM tools such as AnyDesk and others), have also been mentioned in
   the recently leaked Conti Ransomware group's operator's manual as part of their arsenal.
   
   References:
@@ -170,12 +170,12 @@ and practicality.
   
 # Windows.Registry.MuiCache
 
-  Each time that you start using a new application, Windows operating system automatically extract 
+  Each time that you start using a new application, Windows operating system automatically extracts 
   the application name from the version resource of the exe file, and stores it for using it later, 
   in Registry key known as the 'MuiCache'. Even if your delete MUICache items, they'll reappear
   in the next time that you run the application.
 
-  The Location Of The MUICache Data in the Registry,stored under 
+  The location of the MUICache data in the registry is under 
   HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache, and
   these keys are returned by calling the newly build Windows.Registry.UsrClass supporting artifact.
 
@@ -252,9 +252,9 @@ and practicality.
 # MacOS.Sys.BashHistory 
 
   As MacOS artifacts are still highly unexplored in Velociraptor, it was missing a BashHistory parser
-  which is so important.
+  which is so valuable during investigations.
   
-  This artifact enables grep of Bash and alternate shell (python/zsh/etc.) history files, with 
+  This artifact enables grep of Bash and alternate shells (python/zsh/etc.) history files, with 
   regex parameters to filter in/out specific strings.
   
 # MacOS.Applications.Safari.History
