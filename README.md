@@ -25,7 +25,7 @@ and practicality.
   
   This artifact will use the vad() plugin to enumerate the memory regions of each running process,
   and return regions marked as PAGE_EXECUTE_READWRITE ('xrw') to find possibly injected processes. 
-  Out of the pages marked as 'xrw', it performs a yara scan to find and return hits on regions containing
+  Out of the pages marked as 'xrw', it performs a Yara scan to find and return hits on regions containing
   PE Headers. 
   
   Out of the regions containing the PE Headers, it will then use the parse_pe() plugin to try and
@@ -101,7 +101,7 @@ and practicality.
   therefore the actual authentication occurs on the target endpoint.
   
   The detection of Pass-The-Hash attack can be done with any “Negotiation” 
-  logon sessions that contains the Logon Type "9" and Logon Process Name "seclogo, 
+  logon sessions that contains the Logon Type "9" and Logon Process Name "seclogo", 
   and these are the parameters this artifact is based on.
   
   There’s a high probability that Pass-The-Hash attack will be executed via this method, 
@@ -118,7 +118,7 @@ and practicality.
   
 # Windows.EventLogs.ZeroLogon
   
-  Even though it has been pacthed by Microsoft long ago, organizations who do not implement patches in all of their
+  Even though it has been patched by Microsoft long ago, organizations who do not implement patches in all of their
   Domain Controllers might still be exploited by the ZeroLogon vulnerability during an attacker's
   post-exploitation phase. So much so, that it is part of the arsenal in the recently leaked Conti Ransomware group's 
   operator's manual.
@@ -153,7 +153,7 @@ and practicality.
 
   Once a threat actor installs Atera, it leaves behind a registry key with the configuration of the agent,
   including the email address utilized to register to the service. This registry key can be used to find
-  instalations of this tool, and the email utilized in Threat Intelligence efforts.
+  installations of this tool, and the email utilized in Threat Intelligence efforts.
 
   Atera and Splashtop (along with other RMM tools such as AnyDesk and others), have also been mentioned in
   the recently leaked Conti Ransomware group's operator's manual as part of their arsenal.
@@ -183,7 +183,7 @@ and practicality.
 
   This artifact executed the open-source scanning tool Loki on targeted clients.
 
-  Loki users out there may utilize their breadth of yara-signatures, alongside PE-Sieve and other Loki 
+  Loki users out there may utilize their breadth of Yara-signatures, alongside PE-Sieve and other Loki 
   IOC/signature capabilities to perform scans via Velociraptor at scale, and return the output to be
   filtered in VQL. A great combination of two powerful open-source threat hunting tools.
   
@@ -234,7 +234,7 @@ and practicality.
   What sysdiagnose collects:
    
   -   A spindump of the system
-  -   Several seconds of fs_usage ouput
+  -   Several seconds of fs_usage output
   -   Several seconds of top output
   -   Data about kernel zones
   -   Status of loaded kernel extensions
@@ -259,11 +259,10 @@ and practicality.
   
 # MacOS.Applications.Safari.History
 
-  During tests it was noticed that MacOs protects the History.db Safari database from
-  being read directly, under normal circunstances. This causes several DFIR tools to fail to
+  During tests it was noticed that MacOS protects the History.db Safari database from
+  being read directly, under normal circumstances. This causes several DFIR tools to fail to
   parse Safari's browsing history.
   
   This artifact provides the analyst with the capability to parse Safari history, by creating
   temporary copies of the History.db files across specific targeted users (regex filter),
-  and performing a sqlite query on them to return all user's Safari history.
-  
+  and performing a SQLite query on them to return all user's Safari history.
