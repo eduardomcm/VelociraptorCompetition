@@ -4,7 +4,7 @@ My 2021 Velociraptor Competition package contains multiple Windows Detection, Ap
 
 These artifacts were created based on real-world Incident Response use-cases, with the mindset of an Incident Responder and a Threat Hunter. 
 
-They build upon Velociraptor's capabilities to expand the ways DFIR/Threat Hunter analysts can perform their tasks, with more acurary, efficiency
+They build upon Velociraptor's capabilities to expand the ways DFIR/Threat Hunter analysts can perform their tasks, with more accuracy, efficiency
 and practicality.
 
 # Windows.Detection.HashHunt
