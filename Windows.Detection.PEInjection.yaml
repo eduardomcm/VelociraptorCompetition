@@ -94,7 +94,11 @@ sources:
         InjectedPE.FileHeader,
         InjectedPE.PDB,
         InjectedPE.Sections,
+        InjectedPE.Resources,
         InjectedPE.VersionInformation,
+        InjectedPE.Imports,
         InjectedPE.Exports,
-        InjectedPE.Authenticode
+        InjectedPE.ImpHash,
+        InjectedPE.Authenticode,
+        InjectedPE.AuthenticodeHash,
       FROM peinjected
