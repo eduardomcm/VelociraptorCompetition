@@ -100,5 +100,5 @@ sources:
         InjectedPE.Exports,
         InjectedPE.ImpHash,
         InjectedPE.Authenticode,
-        InjectedPE.AuthenticodeHash,
+        InjectedPE.AuthenticodeHash
       FROM peinjected
