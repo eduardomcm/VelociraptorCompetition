@@ -1,8 +1,12 @@
 name: Custom.Windows.Detection.PEInjection
 description: |
-  Enumerate the memory regions of each running process and return VAD regions marked as PAGE_EXECUTE_READWRITE to find possibly injected processes.
+  Enumerate the memory regions of each running process and return Virtual Address 
+  Descriptor (VAD) nodes marked as PAGE_EXECUTE_READWRITE to find possibly 
+  injected processes.
   
-  Once the regions are mapped the regions containing PEs are parsed with the parse_pe() plugin.
+  Once the VAD 'RWX' ranges are mapped the nodes containing PEs are parsed with 
+  the parse_pe() plugin. PEs parsed directly from memory might return inacurate 
+  PE structures' results, such as missing Imports and wrong ImpHash.
 
   MITRE ATT&CK ID: T1055 - Process Injection
     
@@ -40,35 +44,33 @@ sources:
         WHERE Name =~ processRegex
       
       -- merge info from running processes with VAD regions info  
-      LET sus <= SELECT * FROM foreach(
-          row=processes,
-          query={
-            SELECT Pid, Name, Address as AddressStart, (Address + Size) as AddressEnd,
-                format(format='%x-%x', args=[Address, Address+Size]) AS Range, Size,
-                Protection, Ppid, CommandLine, Hash, Username, Authenticode
-            FROM vad(pid=Pid)
-            WHERE Protection = "xrw"
-          })
+      LET sus <= SELECT *, read_file(filename=str(str=Pid), accessor='process', offset=AddressStart, length=Size) as SusPidData  
+                 FROM foreach(
+                    row=processes,
+                    query={
+                        SELECT Pid, Name, Address as AddressStart, (Address + Size) as AddressEnd,
+                            format(format='%x-%x', args=[Address, Address+Size]) AS VADRange, Size,
+                            Protection, Ppid, CommandLine, Hash, Username, Authenticode
+                        FROM vad(pid=Pid)
+                        WHERE Protection = "xrw"
+                    })
           
       -- use yara to find PE's loaded inside the selected vad regions     
-      LET peinjected <= SELECT * FROM foreach(
-        row=sus,
-        query={
-            SELECT
-                Name,
-                CommandLine,
-                Pid,
-                Hash,
-                Authenticode,
-                Username,
-                Rule,
-                str(str=String.Data) AS HitContext,
-                String.Offset as HitOffset,
-                String.Name as HitName,
-                String.HexData as HitHexData,
-                parse_pe(accessor='data', file=read_file(filename=str(str=Pid), accessor='process', offset=String.Offset, length=Size)) as InjectedPE
-             FROM yara(files=Pid,accessor='process',rules=YaraRule, start=AddressStart, end=AddressEnd, key=TRUE)
-          })
+      LET peinjected <= SELECT *
+                        FROM foreach(
+                            row=sus,
+                            query={
+                                SELECT
+                                    Name,
+                                    CommandLine,
+                                    Pid,
+                                    Hash,
+                                    Authenticode,
+                                    Username,
+                                    VADRange,
+                                    parse_pe(accessor='data', file=SusPidData) as InjectedPE
+                                FROM yara(files=SusPidData, accessor='data', rules=YaraRule, key=TRUE)
+                              })
        
        -- return results
        SELECT   
@@ -78,11 +80,8 @@ sources:
             Hash,
             Authenticode,
             Username,
-            Rule,
-            HitContext,
-            HitOffset,
-            HitName,
-            HitHexData
+            VADRange,
+            InjectedPE
        FROM peinjected
        
   - name: ParsedInjectedPE
@@ -91,14 +90,16 @@ sources:
       SELECT 
         Name,
         Pid,
-        InjectedPE.FileHeader,
-        InjectedPE.PDB,
-        InjectedPE.Sections,
-        InjectedPE.Resources,
-        InjectedPE.VersionInformation,
-        InjectedPE.Imports,
-        InjectedPE.Exports,
-        InjectedPE.ImpHash,
-        InjectedPE.Authenticode,
-        InjectedPE.AuthenticodeHash
+        VADRange,
+        InjectedPE.FileHeader as FileHeader,
+        InjectedPE.PDB as PDB,
+        InjectedPE.Sections as Sections,
+        InjectedPE.Resources as Resources,
+        InjectedPE.VersionInformation as VersionInformation,
+        InjectedPE.Imports as Imports,
+        InjectedPE.Exports as Exports,
+        InjectedPE.Forwards as Forwards,
+        InjectedPE.ImpHash as ImpHash,
+        InjectedPE.Authenticode as Authenticode,
+        InjectedPE.AuthenticodeHash as AuthenticodeHash
       FROM peinjected
