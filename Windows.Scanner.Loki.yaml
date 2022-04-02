@@ -4,9 +4,7 @@ description: |
     
     This artifact leverages Loki open-source scanner to scan for IOCs.
     
-    **If the clients being scanned do not have internet access, 
-    this artifact needs some preparation prior to launch. If that is the case, 
-    follow the steps below:**
+    **This artifact needs some preparation prior to launch. Follow the steps below:**
     
     <ol>
     <li> Download the latest Loki release from https://github.com/Neo23x0/Loki/releases 
